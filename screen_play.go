@@ -16,18 +16,12 @@ type PlayScreen struct {
 	gridSize          int           // 网格单元格大小
 	mainChar          *ebiten.Image // 玩家角色图像
 	inventoryLoaded   bool          // 背包是否需要加载
+	currentPage       int           // 当前背包页码
 	selectedItemIndex int           // 当前选中的背包物品索引
 	backgroundImage   *ebiten.Image // 背景图片（新增字段）
 	gridData          [][]int       // 网格数据数组（新增字段）
 	inventorySize     int           // 背包大小
 	items             []*item       // 背包物品数组
-}
-
-type item struct {
-	id    int           // 物品ID
-	name  string        // 物品名称
-	count int           // 数量
-	image *ebiten.Image // 物品图片
 }
 
 func NewPlayScreen() *PlayScreen {
@@ -174,11 +168,11 @@ func (p *PlayScreen) DrawInventory(screen *ebiten.Image) {
 	inventoryY := (screen.Bounds().Dy() - inventoryHeight) / 2
 
 	// 使用 vector 绘制半透明背景（带圆角效果的模拟）
-	vector.DrawFilledRect(screen, float32(inventoryX), float32(inventoryY), float32(inventoryWidth), float32(inventoryHeight), color.RGBA{0, 0, 0, 200}, false)
+	vector.DrawFilledRect(screen, float32(inventoryX), float32(inventoryY), float32(inventoryWidth), float32(inventoryHeight), color.RGBA{A: 200}, false)
 
 	// 绘制边框（双层边框增强视觉效果）
-	vector.StrokeRect(screen, float32(inventoryX), float32(inventoryY), float32(inventoryWidth), float32(inventoryHeight), 2, color.RGBA{100, 100, 150, 255}, false)
-	vector.StrokeRect(screen, float32(inventoryX-1), float32(inventoryY-1), float32(inventoryWidth+2), float32(inventoryHeight+2), 1, color.RGBA{200, 200, 255, 255}, false)
+	vector.StrokeRect(screen, float32(inventoryX), float32(inventoryY), float32(inventoryWidth), float32(inventoryHeight), 2, color.RGBA{R: 100, G: 100, B: 150, A: 255}, false)
+	vector.StrokeRect(screen, float32(inventoryX-1), float32(inventoryY-1), float32(inventoryWidth+2), float32(inventoryHeight+2), 1, color.RGBA{R: 200, G: 200, B: 255, A: 255}, false)
 
 	// 绘制标题
 	titleX := inventoryX + (inventoryWidth-len("Inventory")*6)/2 // 居中标题
@@ -186,7 +180,7 @@ func (p *PlayScreen) DrawInventory(screen *ebiten.Image) {
 	ebitenutil.DebugPrintAt(screen, "Inventory", titleX, titleY)
 
 	// 绘制分隔线
-	vector.DrawFilledRect(screen, float32(inventoryX+10), float32(titleY+20), float32(inventoryWidth-20), 1, color.RGBA{100, 100, 150, 255}, false)
+	vector.DrawFilledRect(screen, float32(inventoryX+10), float32(titleY+20), float32(inventoryWidth-20), 1, color.RGBA{R: 100, G: 100, B: 150, A: 255}, false)
 
 	// 绘制物品列表
 	itemStartX := inventoryX + 20
@@ -198,14 +192,50 @@ func (p *PlayScreen) DrawInventory(screen *ebiten.Image) {
 	// 计算每行最多显示的物品数量
 	itemsPerRow := (inventoryWidth - 40) / (itemWidth + itemSpacing)
 
-	for i, item := range p.items {
-		if i >= p.inventorySize { // 限制显示数量不超过背包容量
-			break
-		}
+	// 当前页码和每页显示的物品数
+	itemsPerPage := itemsPerRow * 5 // 假设最多显示5行
+	currentPage := p.currentPage
+	startIndex := currentPage * itemsPerPage
+	endIndex := startIndex + itemsPerPage
 
-		// 计算物品位置
-		row := i / itemsPerRow
-		col := i % itemsPerRow
+	// 绘制上一页按钮
+	prevBtnX := inventoryX + 20
+	prevBtnY := inventoryY + inventoryHeight - 30
+	vector.DrawFilledRect(screen, float32(prevBtnX), float32(prevBtnY), 60, 20, color.RGBA{R: 100, G: 100, B: 150, A: 255}, false)
+	ebitenutil.DebugPrintAt(screen, "Prev", prevBtnX+15, prevBtnY+5)
+
+	// 绘制下一页按钮
+	nextBtnX := inventoryX + inventoryWidth - 80
+	nextBtnY := inventoryY + inventoryHeight - 30
+	vector.DrawFilledRect(screen, float32(nextBtnX), float32(nextBtnY), 60, 20, color.RGBA{R: 100, G: 100, B: 150, A: 255}, false)
+	ebitenutil.DebugPrintAt(screen, "Next", nextBtnX+15, nextBtnY+5)
+
+	// 处理按钮点击事件
+	cursorX, cursorY := ebiten.CursorPosition()
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		// 上一页按钮点击
+		if cursorX >= prevBtnX && cursorX <= prevBtnX+60 &&
+			cursorY >= prevBtnY && cursorY <= prevBtnY+20 {
+			if currentPage > 0 {
+				p.currentPage--
+			}
+		}
+		// 下一页按钮点击
+		if cursorX >= nextBtnX && cursorX <= nextBtnX+60 &&
+			cursorY >= nextBtnY && cursorY <= nextBtnY+20 {
+			totalItems := len(p.items)
+			if endIndex < totalItems {
+				p.currentPage++
+			}
+		}
+	}
+
+	for i := startIndex; i < endIndex && i < len(p.items); i++ {
+		item := p.items[i]
+		// 计算物品在当前页面的位置
+		localIndex := i - startIndex
+		row := localIndex / itemsPerRow
+		col := localIndex % itemsPerRow
 		x := itemStartX + col*(itemWidth+itemSpacing)
 		y := itemStartY + row*(itemHeight+itemSpacing)
 
@@ -215,32 +245,32 @@ func (p *PlayScreen) DrawInventory(screen *ebiten.Image) {
 		}
 
 		// 绘制物品背景阴影
-		vector.DrawFilledRect(screen, float32(x+2), float32(y+2), float32(itemWidth), float32(itemHeight), color.RGBA{0, 0, 0, 100}, false)
+		vector.DrawFilledRect(screen, float32(x+2), float32(y+2), float32(itemWidth), float32(itemHeight), color.RGBA{A: 100}, false)
 
 		// 如果是选中的物品，绘制高亮背景
 		if i == p.selectedItemIndex {
 			// 绘制选中效果的发光边框
 			for j := 0; j < 3; j++ {
-				vector.StrokeRect(screen, float32(x-j), float32(y-j), float32(itemWidth+2*j), float32(itemHeight+2*j), 1, color.RGBA{100, 150, 255, uint8(150 - j*50)}, false)
+				vector.StrokeRect(screen, float32(x-j), float32(y-j), float32(itemWidth+2*j), float32(itemHeight+2*j), 1, color.RGBA{R: 100, G: 150, B: 255, A: uint8(150 - j*50)}, false)
 			}
 		}
 
 		// 绘制物品背景框
-		vector.DrawFilledRect(screen, float32(x), float32(y), float32(itemWidth), float32(itemHeight), color.RGBA{50, 50, 70, 200}, false)
-		vector.StrokeRect(screen, float32(x), float32(y), float32(itemWidth), float32(itemHeight), 1, color.RGBA{150, 150, 200, 255}, false)
+		vector.DrawFilledRect(screen, float32(x), float32(y), float32(itemWidth), float32(itemHeight), color.RGBA{R: 50, G: 50, B: 70, A: 200}, false)
+		vector.StrokeRect(screen, float32(x), float32(y), float32(itemWidth), float32(itemHeight), 1, color.RGBA{R: 150, G: 150, B: 200, A: 255}, false)
 
 		// 绘制物品图片
-		if item.image != nil {
+		if item.ItemData.Image != nil {
 			op := &ebiten.DrawImageOptions{}
 			// 缩放图片以适应物品框，保持一定边距
-			imgBounds := item.image.Bounds()
+			imgBounds := item.ItemData.Image.Bounds()
 			scaleX := float64(itemWidth-8) / float64(imgBounds.Dx())
 			scaleY := float64(itemHeight-8) / float64(imgBounds.Dy())
 			finalScale := math.Min(scaleX, scaleY) // 保持图片比例
 			op.GeoM.Scale(finalScale, finalScale)
 			op.GeoM.Translate(float64(x)+(float64(itemWidth)-float64(imgBounds.Dx())*finalScale)/2,
 				float64(y)+(float64(itemHeight)-float64(imgBounds.Dy())*finalScale)/2)
-			screen.DrawImage(item.image, op)
+			screen.DrawImage(item.ItemData.Image, op)
 		}
 
 		// 绘制物品数量（右下角）
@@ -248,20 +278,39 @@ func (p *PlayScreen) DrawInventory(screen *ebiten.Image) {
 			countText := fmt.Sprintf("%d", item.count)
 			textWidth := len(countText) * 6
 			// 绘制数量背景
-			vector.DrawFilledRect(screen, float32(x+itemWidth-textWidth-4), float32(y+itemHeight-16), float32(textWidth+4), 16, color.RGBA{0, 0, 0, 200}, false)
+			vector.DrawFilledRect(screen, float32(x+itemWidth-textWidth-4), float32(y+itemHeight-16), float32(textWidth+4), 16, color.RGBA{A: 200}, false)
 			ebitenutil.DebugPrintAt(screen, countText, x+itemWidth-textWidth-2, y+itemHeight-14)
 		}
 
 		// 绘制物品名称（鼠标悬停时显示）
-		cursorX, cursorY := ebiten.CursorPosition()
+		// 绘制物品名称（鼠标悬停时显示）
 		if cursorX >= x && cursorX <= x+itemWidth && cursorY >= y && cursorY <= y+itemHeight {
 			// 绘制名称背景
-			nameWidth := len(item.name)*6 + 4
+			nameWidth := len(item.ItemData.Name)*6 + 4
 			nameX := x + (itemWidth-nameWidth)/2
-			vector.DrawFilledRect(screen, float32(nameX), float32(y-20), float32(nameWidth), 16, color.RGBA{0, 0, 0, 200}, false)
-			ebitenutil.DebugPrintAt(screen, item.name, nameX+2, y-18)
+			vector.DrawFilledRect(screen, float32(nameX), float32(y-20), float32(nameWidth), 16, color.RGBA{A: 200}, false)
+			ebitenutil.DebugPrintAt(screen, item.ItemData.Name, nameX+2, y-18)
 		}
 	}
+
+	// 绘制分页信息和背包容量信息
+	totalItems := len(p.items)
+	totalPages := (totalItems + itemsPerPage - 1) / itemsPerPage // 向上取整计算总页数
+	if totalPages == 0 {
+		totalPages = 1 // 至少有一页
+	}
+
+	// 显示当前页码和总页数
+	pageInfoText := fmt.Sprintf("Page %d/%d", currentPage+1, totalPages)
+	pageInfoX := inventoryX + 20
+	pageInfoY := inventoryY + inventoryHeight - 50
+	ebitenutil.DebugPrintAt(screen, pageInfoText, pageInfoX, pageInfoY)
+
+	// 显示背包容量信息
+	capacityInfoText := fmt.Sprintf("Items: %d/%d", totalItems, p.inventorySize)
+	capacityInfoX := inventoryX + inventoryWidth - len(capacityInfoText)*6 - 20
+	capacityInfoY := pageInfoY
+	ebitenutil.DebugPrintAt(screen, capacityInfoText, capacityInfoX, capacityInfoY)
 
 	// 绘制关闭按钮
 	closeBtnSize := 20
@@ -269,15 +318,14 @@ func (p *PlayScreen) DrawInventory(screen *ebiten.Image) {
 	closeBtnY := inventoryY + 10
 
 	// 关闭按钮背景
-	vector.DrawFilledRect(screen, float32(closeBtnX), float32(closeBtnY), float32(closeBtnSize), float32(closeBtnSize), color.RGBA{200, 50, 50, 200}, false)
-	vector.StrokeRect(screen, float32(closeBtnX), float32(closeBtnY), float32(closeBtnSize), float32(closeBtnSize), 1, color.RGBA{255, 100, 100, 255}, false)
+	vector.DrawFilledRect(screen, float32(closeBtnX), float32(closeBtnY), float32(closeBtnSize), float32(closeBtnSize), color.RGBA{R: 200, G: 50, B: 50, A: 200}, false)
+	vector.StrokeRect(screen, float32(closeBtnX), float32(closeBtnY), float32(closeBtnSize), float32(closeBtnSize), 1, color.RGBA{R: 255, G: 100, B: 100, A: 255}, false)
 
 	// 关闭按钮 "X"
 	ebitenutil.DebugPrintAt(screen, "X", closeBtnX+7, closeBtnY+2)
 
 	// 检查关闭按钮点击
 	if p.inventoryLoaded {
-		cursorX, cursorY := ebiten.CursorPosition()
 		if cursorX >= closeBtnX && cursorX <= closeBtnX+closeBtnSize &&
 			cursorY >= closeBtnY && cursorY <= closeBtnY+closeBtnSize &&
 			inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
@@ -322,10 +370,18 @@ func (p *PlayScreen) initGridData(height int, width int) {
 // 初始化背包物品 金币 50000
 func (p *PlayScreen) initBag() {
 	p.inventorySize = 5
-	p.items = append(p.items, &item{
-		count: 50000,
-		id:    0,
-		image: itemImages["1001"],
-		name:  "金币",
-	})
+	p.items = []*item{
+		{
+			ItemData: ItemImages[1001], // 金币
+			count:    50000,
+		},
+		{
+			ItemData: ItemImages[1002], // 新手剑
+			count:    1000,
+		},
+		{
+			ItemData: ItemImages[1003], // 一级剑
+			count:    1,
+		},
+	}
 }
